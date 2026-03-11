@@ -1,0 +1,81 @@
+"""HR Chatbot service using LangChain for conversational AI assistant."""
+
+from openai import OpenAI
+from app.config import get_settings
+from typing import List, Dict, Optional
+
+settings = get_settings()
+
+# In-memory conversation store (use Redis in production)
+_conversations: Dict[str, List[dict]] = {}
+
+SYSTEM_PROMPT = """You are an AI HR Assistant for a recruitment platform. You help HR professionals with:
+
+1. **Job Description Creation**: Help write or improve job descriptions when asked.
+2. **Candidate Summarization**: Summarize candidate profiles and their qualifications.
+3. **HR FAQ**: Answer common HR questions about recruitment best practices, compliance, and processes.
+4. **General HR Support**: Provide guidance on hiring workflows, interview techniques, and onboarding.
+
+Guidelines:
+- Be professional, helpful, and concise
+- Use inclusive language
+- If you don't know something specific to the company, say so
+- When creating JDs, ask clarifying questions if needed
+- Support both Thai and English languages based on user input
+
+You do NOT have access to the actual database. If the user asks about specific candidates or jobs,
+guide them to use the platform's dashboard features instead."""
+
+
+def chat(
+    message: str,
+    session_id: str,
+    context: Optional[str] = None,
+) -> str:
+    """Process a chat message and return AI response."""
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    # Initialize conversation if new session
+    if session_id not in _conversations:
+        _conversations[session_id] = []
+
+    # Build messages
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    # Add context if provided
+    if context:
+        messages.append({
+            "role": "system",
+            "content": f"Additional context from the platform:\n{context}"
+        })
+
+    # Add conversation history (last 10 turns to stay within limits)
+    messages.extend(_conversations[session_id][-20:])
+
+    # Add current user message
+    messages.append({"role": "user", "content": message})
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        temperature=0.7,
+        max_tokens=1000,
+    )
+
+    assistant_message = response.choices[0].message.content
+
+    # Store conversation history
+    _conversations[session_id].append({"role": "user", "content": message})
+    _conversations[session_id].append({"role": "assistant", "content": assistant_message})
+
+    # Limit stored history
+    if len(_conversations[session_id]) > 40:
+        _conversations[session_id] = _conversations[session_id][-20:]
+
+    return assistant_message
+
+
+def clear_session(session_id: str):
+    """Clear conversation history for a session."""
+    if session_id in _conversations:
+        del _conversations[session_id]
