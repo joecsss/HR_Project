@@ -18,8 +18,7 @@ class CandidateResponse(CandidateBase):
     parsed_data: Optional[dict] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class CandidateDetailResponse(CandidateResponse):
@@ -47,8 +46,7 @@ class ApplicationResponse(BaseModel):
     cover_letter: Optional[str] = None
     applied_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class ApplicationWithDetails(ApplicationResponse):

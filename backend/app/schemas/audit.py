@@ -17,8 +17,7 @@ class AuditLogResponse(BaseModel):
     metadata_json: Optional[dict] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class AuditLogListResponse(BaseModel):
