@@ -1,7 +1,7 @@
 """Authentication API routes."""
 
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -13,8 +13,8 @@ from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token, TokenData
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 settings = get_settings()
 
 
@@ -23,18 +23,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def hash_password(password: str) -> str:
+    if password is None:
+        raise ValueError("Password must not be empty")
     return pwd_context.hash(password)
 
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
+    if "sub" in to_encode:
+        to_encode["sub"] = str(to_encode["sub"])
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """Dependency to get the current authenticated user from JWT token."""
@@ -43,11 +48,24 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if not token:
+        auth_header = request.headers.get("authorization")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Missing token. Authorization header present: {bool(auth_header)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        user_id: int = payload.get("sub")
+        user_id = payload.get("sub")
         if user_id is None:
             raise credentials_exception
+        if isinstance(user_id, str):
+            if user_id.isdigit():
+                user_id = int(user_id)
+            else:
+                raise credentials_exception
     except JWTError:
         raise credentials_exception
 

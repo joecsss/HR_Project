@@ -66,3 +66,22 @@ class MatchResult(BaseModel):
     reasoning: str
     strengths: List[str]
     gaps: List[str]
+
+
+class CandidateCompareRequest(BaseModel):
+    job_id: int
+    application_ids: List[int]
+    
+
+class CandidateCompareSummary(BaseModel):
+    application_id: int
+    candidate_id: int
+    candidate_name: Optional[str] = None
+    strengths: List[str]
+    gaps: List[str]
+
+
+class CandidateCompareResponse(BaseModel):
+    candidates: List[CandidateCompareSummary]
+    analysis: str
+    recommended_application_id: int

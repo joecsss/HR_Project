@@ -96,3 +96,63 @@ def match_candidate_to_job(
         "gaps": match_result.get("gaps", []),
         "recommendation": match_result.get("recommendation", ""),
     }
+
+
+def compare_candidates_with_llm(
+    candidates_data: List[dict],
+    job_data: dict,
+) -> dict:
+    """Use LLM to compare multiple candidates against a job description."""
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+    profiles_text = []
+    for cand in candidates_data:
+        profile = cand.get("profile", {})
+        cand_id = cand.get("candidate_id", "Unknown")
+        app_id = cand.get("application_id", "Unknown")
+        name = cand.get("name", "Unknown")
+        
+        summary = [f"Candidate ID: {cand_id}", f"Application ID: {app_id}", f"Name: {name}"]
+        if profile.get("skills"):
+            skills = profile["skills"]
+            if isinstance(skills, list):
+                skills = ", ".join(skills)
+            summary.append(f"Skills: {skills}")
+        if profile.get("experience_years"):
+            summary.append(f"Years of Experience: {profile.get('experience_years')}")
+        if profile.get("education"):
+             summary.append(f"Education: {profile.get('education')}")
+
+        profiles_text.append("\n".join(summary))
+
+    prompt = f"""You are an expert HR recruiter. Compare these candidates for the following job position.
+
+Job Title: {job_data.get('title', 'N/A')}
+Job Description: {job_data.get('description', 'N/A')[:2000]}
+Job Requirements: {job_data.get('requirements', 'N/A')[:1000]}
+
+Candidates:
+{"\n---\n".join(profiles_text)}
+
+Provide a detailed comparative analysis. Return a JSON object with:
+- "candidates": A list of objects for each candidate containing:
+    - "application_id": Match the application ID from the input
+    - "candidate_id": Match the candidate ID from the input
+    - "candidate_name": Name of the candidate
+    - "strengths": List of 1-3 specific strengths for this job
+    - "gaps": List of 1-3 specific gaps for this job
+- "analysis": A 2-3 paragraph explanation of how the candidates compare to each other in relation to the job requirements.
+- "recommended_application_id": The application ID of the candidate you recommend most (as an integer).
+
+Return ONLY valid JSON."""
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        response_format={"type": "json_object"},
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    return result
+

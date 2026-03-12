@@ -19,7 +19,7 @@ from app.schemas.candidate import (
 from app.api.auth import get_current_user, require_admin
 from app.services.resume_parser import process_resume
 from app.services.embedding import generate_embedding
-from app.services.matching import match_candidate_to_job
+from app.services.matching import match_candidate_to_job, compare_candidates_with_llm
 from app.services.audit import create_audit_log
 
 router = APIRouter(prefix="/api/candidates", tags=["Candidates"])
@@ -57,7 +57,18 @@ async def upload_resume(
         result = process_resume(file_path)
     except Exception as e:
         os.remove(file_path)
-        raise HTTPException(status_code=500, detail=f"Failed to parse resume: {str(e)}")
+        msg = str(e)
+        if "insufficient_quota" in msg or "You exceeded your current quota" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="OpenAI quota exceeded. Please check your plan and billing details.",
+            )
+        if "Error code: 429" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="OpenAI rate limit or quota exceeded. Please retry later or check billing.",
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to parse resume: {msg}")
 
     # Generate embedding from de-identified data
     try:
@@ -167,7 +178,7 @@ async def apply_to_job(
     # Compute match score
     match_score = None
     match_reasoning = None
-    if candidate.embedding and job.embedding:
+    if candidate.embedding is not None and job.embedding is not None:
         try:
             match_result = match_candidate_to_job(
                 candidate_embedding=list(candidate.embedding),
