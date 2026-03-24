@@ -106,35 +106,7 @@ export default function LoginPage() {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    ประเภทผู้ใช้
-                  </label>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setRole("applicant")}
-                      className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                        role === "applicant"
-                          ? "bg-teal-500 text-white shadow-lg shadow-teal-500/25"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      ผู้สมัครงาน
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRole("admin")}
-                      className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${
-                        role === "admin"
-                          ? "bg-teal-500 text-white shadow-lg shadow-teal-500/25"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      HR / Admin
-                    </button>
-                  </div>
-                </div>
+
               </>
             )}
 

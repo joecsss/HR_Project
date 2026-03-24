@@ -2,6 +2,7 @@
 
 from sqlalchemy.orm import Session
 from app.models.audit import AuditLog
+from app.models.user import User
 from typing import Optional
 
 
@@ -18,8 +19,16 @@ def create_audit_log(
     ip_address: Optional[str] = None,
 ) -> AuditLog:
     """Create an audit log entry."""
+    # `user_id=0` is reserved for the hardcoded admin account and does not
+    # exist in `users`, so store NULL to avoid FK violations.
+    resolved_user_id: Optional[int] = user_id
+    if resolved_user_id == 0:
+        resolved_user_id = None
+    elif resolved_user_id is not None and db.get(User, resolved_user_id) is None:
+        resolved_user_id = None
+
     log = AuditLog(
-        user_id=user_id,
+        user_id=resolved_user_id,
         action=action,
         entity_type=entity_type,
         entity_id=entity_id,

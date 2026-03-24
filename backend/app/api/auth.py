@@ -69,6 +69,17 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
+    if user_id == 0:
+        return User(
+            id=0,
+            email=getattr(settings, "ADMIN_EMAIL", "admin@admin.com"),
+            full_name="System Administrator",
+            role=UserRole.ADMIN,
+            phone=None,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
@@ -88,8 +99,14 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
 @router.post("/register", response_model=UserResponse)
 async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     """Register a new user (admin or applicant)."""
+    if user_data.role == UserRole.ADMIN or user_data.role == UserRole.ADMIN.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration as admin is not allowed",
+        )
+
     existing = db.query(User).filter(User.email == user_data.email).first()
-    if existing:
+    if existing or user_data.email == "admin@admin.com":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
@@ -111,11 +128,25 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=Token)
 async def login(login_data: UserLogin, db: Session = Depends(get_db)):
     """Login and get access token."""
+    # Hardcoded admin login
+    admin_email = getattr(settings, "ADMIN_EMAIL", "admin@admin.com")
+    admin_password = getattr(settings, "ADMIN_PASSWORD", "admin1234")
+    
+    if login_data.email == admin_email and login_data.password == admin_password:
+        access_token = create_access_token(data={"sub": 0, "role": UserRole.ADMIN.value})
+        return Token(access_token=access_token)
+
     user = db.query(User).filter(User.email == login_data.email).first()
     if not user or not verify_password(login_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+        
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin login is restricted to the hardcoded account",
         )
 
     access_token = create_access_token(data={"sub": user.id, "role": user.role.value})
@@ -125,4 +156,13 @@ async def login(login_data: UserLogin, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """Get current user profile."""
-    return current_user
+    # Keep response schema stable even for legacy rows that may miss created_at.
+    created_at = current_user.created_at or datetime.now(timezone.utc)
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        phone=current_user.phone,
+        role=current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role),
+        created_at=created_at,
+    )

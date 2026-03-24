@@ -3,6 +3,7 @@
 from openai import OpenAI
 from app.config import get_settings
 from typing import List, Dict, Optional
+import re
 
 settings = get_settings()
 
@@ -22,9 +23,32 @@ Guidelines:
 - If you don't know something specific to the company, say so
 - When creating JDs, ask clarifying questions if needed
 - Support both Thai and English languages based on user input
+- IMPORTANT: Only answer HR/recruitment-related questions.
+- If the user asks off-topic questions (math homework, coding, entertainment, etc.),
+  politely refuse and redirect to HR topics.
 
 You do NOT have access to the actual database. If the user asks about specific candidates or jobs,
 guide them to use the platform's dashboard features instead."""
+
+OFF_TOPIC_MESSAGE = (
+    "ขออภัย ฉันช่วยได้เฉพาะเรื่องงาน HR และการสรรหาเท่านั้น "
+    "เช่น การเขียน JD, คัดกรองเรซูเม่, สรุปผู้สมัคร, วางคำถามสัมภาษณ์, และกระบวนการสรรหา"
+)
+
+HR_KEYWORDS = {
+    "hr", "human resource", "human resources", "recruit", "recruitment", "hiring",
+    "job", "job description", "jd", "interview", "candidate", "resume", "cv",
+    "talent", "onboarding", "payroll", "benefit", "compliance", "workforce",
+    "สรรหา", "รับสมัคร", "สมัครงาน", "ตำแหน่งงาน", "ประกาศงาน", "คำบรรยายงาน", "job description",
+    "ผู้สมัคร", "เรซูเม่", "สัมภาษณ์", "คัดกรอง", "บุคคล", "บุคคลากร", "ทรัพยากรบุคคล",
+    "พนักงาน", "เงินเดือน", "สวัสดิการ", "ทดลองงาน", "ประเมิน", "onboarding", "hr"
+}
+
+
+def _is_hr_related(message: str, context: Optional[str] = None) -> bool:
+    text = f"{message} {context or ''}".lower()
+    text = re.sub(r"\s+", " ", text)
+    return any(keyword in text for keyword in HR_KEYWORDS)
 
 
 def chat(
@@ -33,6 +57,9 @@ def chat(
     context: Optional[str] = None,
 ) -> str:
     """Process a chat message and return AI response."""
+    if not _is_hr_related(message=message, context=context):
+        return OFF_TOPIC_MESSAGE
+
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
     # Initialize conversation if new session
@@ -58,7 +85,7 @@ def chat(
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
-        temperature=0.7,
+        temperature=0.2,
         max_tokens=1000,
     )
 
