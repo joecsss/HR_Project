@@ -18,6 +18,28 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 settings = get_settings()
 
 
+def ensure_admin_user(db: Session) -> User:
+    """Ensure configured admin account exists in DB and return it."""
+    admin_email = getattr(settings, "ADMIN_EMAIL", "admin@admin.com")
+    admin_password = getattr(settings, "ADMIN_PASSWORD", "admin1234")
+
+    admin_user = db.query(User).filter(User.email == admin_email).first()
+    if admin_user:
+        return admin_user
+
+    admin_user = User(
+        email=admin_email,
+        password_hash=hash_password(admin_password),
+        full_name="System Administrator",
+        role=UserRole.ADMIN,
+        phone=None,
+    )
+    db.add(admin_user)
+    db.commit()
+    db.refresh(admin_user)
+    return admin_user
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
@@ -69,16 +91,9 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
+    # Backward compatibility for previously issued admin tokens with sub=0.
     if user_id == 0:
-        return User(
-            id=0,
-            email=getattr(settings, "ADMIN_EMAIL", "admin@admin.com"),
-            full_name="System Administrator",
-            role=UserRole.ADMIN,
-            phone=None,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-        )
+        return ensure_admin_user(db)
 
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
@@ -133,7 +148,8 @@ async def login(login_data: UserLogin, db: Session = Depends(get_db)):
     admin_password = getattr(settings, "ADMIN_PASSWORD", "admin1234")
     
     if login_data.email == admin_email and login_data.password == admin_password:
-        access_token = create_access_token(data={"sub": 0, "role": UserRole.ADMIN.value})
+        admin_user = ensure_admin_user(db)
+        access_token = create_access_token(data={"sub": admin_user.id, "role": UserRole.ADMIN.value})
         return Token(access_token=access_token)
 
     user = db.query(User).filter(User.email == login_data.email).first()
